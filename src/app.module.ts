@@ -1,8 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
-import { UsersModule } from './users/users.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { PatientsModule } from './patients/patients.module';
+import { DoctorsModule } from './doctors/doctors.module';
+import { AppointmentsModule } from './appointments/appointments.module';
+import { AppointmentDetailsModule } from './appointment_details/appointment_details.module';
+import { AvailabilityDoctorModule } from './availability_doctor/availability_doctor.module';
 
 @Module({
   imports: [
@@ -23,7 +27,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
       }),
     }),
     AuthModule,
-    UsersModule,
+    PatientsModule,
+    DoctorsModule,
+    AppointmentsModule,
+    AppointmentDetailsModule,
+    AvailabilityDoctorModule,
   ],
 })
 export class AppModule {}
