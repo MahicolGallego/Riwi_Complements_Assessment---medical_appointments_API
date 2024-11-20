@@ -6,7 +6,11 @@
 
 ## Description
 
-Api for scheduling medical appointments
+Api for scheduling appointments
+
+### Solution development
+
+It includes user registration and login for both patients and doctors, with authentication handled through JWT and Passport strategies. The API features role-based access to routes and information, allowing patients and doctors to interact with the system according to their roles. Doctors can register their availability schedules, while patients can view and filter available slots by specialist type and date. Patients can also schedule, view, cancel, and reschedule appointments, while doctors can manage their appointments, update their status, and provide feedback notes. Additionally, the API includes an automated scheduled task that runs every hour to check for expired availability slots that were not taken and disables them.
 
 ## Running the Project
 

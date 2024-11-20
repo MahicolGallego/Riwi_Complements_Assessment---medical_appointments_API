@@ -1,16 +1,15 @@
-import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
-import { AuthService } from './auth.service';
-
-import { AuthGuard } from '@nestjs/passport';
-
-import { Request } from 'express';
 import {
   ApiBadRequestResponse,
+  ApiBody,
   ApiCreatedResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { AuthGuard } from '@nestjs/passport';
+import { Request } from 'express';
 import { CreatePatientDto } from 'src/patients/dto/create-patient.dto';
 import { Patient } from 'src/patients/entities/patient.entity';
 import { Doctor } from 'src/doctors/entities/doctor.entity';
@@ -23,15 +22,38 @@ export class AuthController {
 
   @Post('register/patients')
   @ApiOperation({
-    summary: 'Register a new user',
+    summary: 'Register a new patient',
     description:
-      'Register a new user by providing the necessary information in the request body.',
+      'Registers a new patient with name, email, and password. Returns the authentication token and user data.',
+  })
+  @ApiBody({
+    type: CreatePatientDto,
+    description: 'Data required to register a patient',
   })
   @ApiCreatedResponse({
-    description: 'User successfully registered.',
+    description: 'Patient successfully registered.',
+    type: Patient,
+    schema: {
+      example: {
+        accessToken: 'JWT_TOKEN',
+        user: {
+          id: 'patient123',
+          name: 'Jane Smith',
+          email: 'janesmith@example.com',
+          role: 'patient',
+        },
+      },
+    },
   })
   @ApiBadRequestResponse({
-    description: 'Bad Request. Ensure the input data is valid.',
+    description: 'Invalid input data. Validation failed.',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: ['name should not be empty', 'email must be an email'],
+        error: 'Bad Request',
+      },
+    },
   })
   async createPatient(@Body() createPatientDto: CreatePatientDto) {
     return await this.authService.registerPatientUser(createPatientDto);
@@ -39,15 +61,39 @@ export class AuthController {
 
   @Post('register/doctors')
   @ApiOperation({
-    summary: 'Register a new user',
+    summary: 'Register a new doctor',
     description:
-      'Register a new user by providing the necessary information in the request body.',
+      'Registers a new doctor with name, email, password, and specialty. Returns the authentication token and user data.',
+  })
+  @ApiBody({
+    type: CreateDoctorDto,
+    description: 'Data required to register a doctor',
   })
   @ApiCreatedResponse({
-    description: 'User successfully registered.',
+    description: 'Doctor successfully registered.',
+    type: Doctor,
+    schema: {
+      example: {
+        accessToken: 'JWT_TOKEN',
+        user: {
+          id: 'doctor123',
+          name: 'Dr. John Doe',
+          email: 'johndoe@example.com',
+          specialty: 'Cardiology',
+          role: 'doctor',
+        },
+      },
+    },
   })
   @ApiBadRequestResponse({
-    description: 'Bad Request. Ensure the input data is valid.',
+    description: 'Invalid input data. Validation failed.',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: ['name should not be empty', 'email must be an email'],
+        error: 'Bad Request',
+      },
+    },
   })
   async createDoctor(@Body() createDoctorDto: CreateDoctorDto) {
     return await this.authService.registerDoctorUser(createDoctorDto);
@@ -56,14 +102,43 @@ export class AuthController {
   @UseGuards(AuthGuard('localStrategy'))
   @Post('login')
   @ApiOperation({
-    summary: 'Login an existing user',
-    description: 'Authenticate a user and return a JWT token.',
+    summary: 'Login a user (patient or doctor)',
+    description:
+      'Authenticate a user using email and password. Returns a JWT token and user information.',
+  })
+  @ApiBody({
+    schema: {
+      example: {
+        email: 'user@example.com',
+        password: 'your_password',
+      },
+    },
+    description: 'Credentials for login',
   })
   @ApiCreatedResponse({
-    description: 'Successfully logged in and JWT token generated.',
+    description: 'Login successful. JWT token returned.',
+    schema: {
+      example: {
+        accessToken: 'JWT_TOKEN',
+        user: {
+          id: 'doctor123',
+          name: 'Dr. John Doe',
+          email: 'johndoe@example.com',
+          specialty: 'cardiology',
+          role: 'doctor',
+        },
+      },
+    },
   })
   @ApiUnauthorizedResponse({
-    description: 'Unauthorized. Invalid credentials.',
+    description: 'Invalid credentials provided.',
+    schema: {
+      example: {
+        statusCode: 401,
+        message: 'Invalid credentials',
+        error: 'Unauthorized',
+      },
+    },
   })
   login(@Req() req: Request) {
     const user = req.user as Patient | Doctor;

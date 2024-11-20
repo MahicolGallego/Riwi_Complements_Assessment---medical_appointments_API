@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { AppointmentDetail } from 'src/appointment_details/entities/appointment_detail.entity';
 import { AppointmentStatus } from 'src/common/constants/appoinment-status.enum';
 import { Role } from 'src/common/constants/roles.enum';
@@ -14,12 +15,21 @@ import {
 
 @Entity('appointments')
 export class Appointment {
+  @ApiProperty({
+    description: 'Unique ID for the appointment',
+    example: 'uuid',
+  })
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @ApiProperty({
+    description: 'Appointment date and time',
+    example: '2024-11-20T10:00:00Z',
+  })
   @Column({ type: 'timestamp' })
   appointment_date: Date;
 
+  @ApiProperty({ description: 'Appointment status', enum: AppointmentStatus })
   @Column({
     type: 'enum',
     enum: AppointmentStatus,
@@ -27,12 +37,19 @@ export class Appointment {
   })
   status: AppointmentStatus;
 
+  @ApiProperty({ description: 'ID of the associated patient' })
   @Column()
   patient_id: string;
 
+  @ApiProperty({ description: 'ID of the associated doctor' })
   @Column()
   doctor_id: string;
 
+  @ApiProperty({
+    description: 'Role of the user who updated the appointment (optional)',
+    enum: Role,
+    nullable: true,
+  })
   @Column({
     type: 'enum',
     enum: Role,
@@ -49,6 +66,10 @@ export class Appointment {
   @JoinColumn({ name: 'patient_id' })
   patient: Patient;
 
+  @ApiProperty({
+    description: 'Additional details of the appointment',
+    type: () => AppointmentDetail,
+  })
   @OneToOne(
     () => AppointmentDetail,
     (appointment_details) => appointment_details.appointment,

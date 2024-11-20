@@ -1,4 +1,9 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { hashPassword } from 'src/common/helpers/hash-password.helper';
 import { AuthService } from 'src/auth/auth.service';
@@ -12,7 +17,7 @@ import { ErrorManager } from 'src/common/exception-filters/error-manager.filter'
 export class DoctorsService {
   constructor(
     @InjectRepository(Doctor)
-    private readonly patientsRepository: Repository<Doctor>,
+    private readonly doctorsRepository: Repository<Doctor>,
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => AuthService))
     private readonly authService: AuthService,
@@ -20,13 +25,13 @@ export class DoctorsService {
 
   async registerDoctor(createDoctorDto: CreateDoctorDto): Promise<object> {
     try {
-      const newUser = this.patientsRepository.create(createDoctorDto);
+      const newUser = this.doctorsRepository.create(createDoctorDto);
       newUser.password = await hashPassword(
         newUser.password,
         this.configService,
       );
 
-      const createdUser = await this.patientsRepository.save(newUser);
+      const createdUser = await this.doctorsRepository.save(newUser);
 
       // Retornar credenciales de acceso despues de crear el usuario
       return this.authService.generateJwtToken(createdUser);
@@ -41,6 +46,18 @@ export class DoctorsService {
   }
 
   async findByEmail(email: string) {
-    return await this.patientsRepository.findOne({ where: { email } });
+    return await this.doctorsRepository.findOne({ where: { email } });
+  }
+
+  async findById(id: string): Promise<Doctor> {
+    const doctor = await this.doctorsRepository.findOne({
+      where: { id },
+    });
+
+    if (!doctor) {
+      throw new NotFoundException('Doctor not found');
+    }
+
+    return doctor;
   }
 }

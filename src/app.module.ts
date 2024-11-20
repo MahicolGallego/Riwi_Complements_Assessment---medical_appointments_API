@@ -23,7 +23,7 @@ import { AvailabilityDoctorModule } from './availability_doctor/availability_doc
         database: configService.get<string>('DB_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: true, // Automatically synchronize the database schema (development only)
-        logging: true, // Enable logging of SQL queries (development only)
+        logging: false, // Enable logging of SQL queries (development only)
       }),
     }),
     AuthModule,

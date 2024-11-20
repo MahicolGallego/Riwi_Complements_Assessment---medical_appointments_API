@@ -1,4 +1,9 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { ErrorManager } from 'src/common/exception-filters/error-manager.filter';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -42,5 +47,16 @@ export class PatientsService {
 
   async findByEmail(email: string) {
     return await this.patientsRepository.findOne({ where: { email } });
+  }
+
+  async findById(id: string): Promise<Patient> {
+    const patient = await this.patientsRepository.findOne({
+      where: { id },
+    });
+    if (!patient) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    return patient;
   }
 }

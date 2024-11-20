@@ -1,4 +1,11 @@
-import { PartialType } from '@nestjs/swagger';
-import { CreateAppointmentDetailDto } from './create-appointment_detail.dto';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
-export class UpdateAppointmentDetailDto extends PartialType(CreateAppointmentDetailDto) {}
+export class UpdateAppointmentDetailDto {
+  @IsOptional()
+  @IsString()
+  reason_consultation: string;
+
+  @IsNotEmpty()
+  @IsString()
+  notes: string;
+}

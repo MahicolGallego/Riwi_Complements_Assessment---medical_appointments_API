@@ -39,7 +39,7 @@ export class AuthService {
 
     if (!foundUser) {
       foundUser = await this.doctorsService.findByEmail(userCredentials.email);
-      throw new UnauthorizedException('Invalid credentials');
+      if (!foundUser) throw new UnauthorizedException('Invalid credentials');
     }
 
     //validate password

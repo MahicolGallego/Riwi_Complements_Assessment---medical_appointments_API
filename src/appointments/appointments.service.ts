@@ -2,32 +2,36 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Appointment } from 'src/appointments/entities/appointment.entity';
-import { AppointmentDetail } from 'src/appointment_details/entities/appointment_detail.entity';
-
-import { AvailabilityDoctor } from 'src/availability_doctor/entities/availability_doctor.entity';
-import { Doctor } from 'src/doctors/entities/doctor.entity';
-import { Patient } from 'src/patients/entities/patient.entity';
 import { AppointmentStatus } from 'src/common/constants/appoinment-status.enum';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { Role } from 'src/common/constants/roles.enum';
+import {
+  IFilterOptionsForDoctors,
+  IFilterOptionsForPatients,
+} from 'src/common/interfaces/availabilities-filter-options';
+import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { AppointmentDetailsService } from 'src/appointment_details/appointment_details.service';
+import { AvailabilityDoctorService } from 'src/availability_doctor/availability_doctor.service';
+import { DoctorsService } from 'src/doctors/doctors.service';
+import { PatientsService } from 'src/patients/patients.service';
 
 @Injectable()
 export class AppointmentService {
   constructor(
     @InjectRepository(Appointment)
     private readonly appointmentRepository: Repository<Appointment>,
-    @InjectRepository(AppointmentDetail)
-    private readonly appointmentDetailRepository: Repository<AppointmentDetail>,
-    @InjectRepository(AvailabilityDoctor)
-    private readonly availabilityDoctorRepository: Repository<AvailabilityDoctor>,
-    @InjectRepository(Doctor)
-    private readonly doctorRepository: Repository<Doctor>,
-    @InjectRepository(Patient)
-    private readonly patientRepository: Repository<Patient>,
+    @Inject(forwardRef(() => AppointmentDetailsService))
+    private readonly appointmentsDetailsService: AppointmentDetailsService,
+    private readonly availabilitiesDoctorService: AvailabilityDoctorService,
+    private readonly doctorsService: DoctorsService,
+    private readonly patientsService: PatientsService,
   ) {}
 
   async create(
@@ -37,20 +41,11 @@ export class AppointmentService {
       createAppointmentDto;
 
     // Check if the doctor is available for the requested date and time
-    const availability = await this.availabilityDoctorRepository.findOne({
-      where: {
-        id: availability_id,
-        is_availability: true,
+    const availability =
+      await this.availabilitiesDoctorService.searchAvailabilityDoctorByAvailabilityId(
+        availability_id,
         doctor_id,
-      },
-      relations: ['doctor'],
-    });
-
-    if (!availability) {
-      throw new ConflictException(
-        'The doctor is not available at the selected time or is already scheduled',
       );
-    }
 
     // create the appointment date, based on the availability date
     const { year, month, day, schedule } = availability;
@@ -59,21 +54,9 @@ export class AppointmentService {
     const appointment_date = new Date(year, month - 1, day, schedule, 0, 0);
 
     // Verify that the patient exists
-    const patient = await this.patientRepository.findOne({
-      where: { id: patient_id },
-    });
-    if (!patient) {
-      throw new NotFoundException('Paciente no encontrado');
-    }
-
+    const patient = await this.patientsService.findById(patient_id);
     // Verify that the doctor exists
-    const doctor = await this.doctorRepository.findOne({
-      where: { id: doctor_id },
-    });
-
-    if (!doctor) {
-      throw new NotFoundException('Doctor not exists');
-    }
+    const doctor = await this.doctorsService.findById(doctor_id);
 
     // create a new appointment
     const appointment = this.appointmentRepository.create({
@@ -84,28 +67,43 @@ export class AppointmentService {
     });
 
     //register on DB The new appointment
-    await this.appointmentRepository.save(appointment);
+    const newAppointmentRegistered =
+      await this.appointmentRepository.save(appointment);
 
-    // crate appoinment details
-    const appointmentDetail = this.appointmentDetailRepository.create({
-      appointment,
+    // create appoinment details
+    await this.appointmentsDetailsService.create({
+      appointment_id: newAppointmentRegistered.id,
       reason_consultation,
     });
 
-    //register on DB The new appointment details for the new appoinment
-    await this.appointmentDetailRepository.save(appointmentDetail);
-
     //  Update the doctor's availability for that date and ti
     availability.is_availability = false;
-    await this.availabilityDoctorRepository.save(availability);
+    await this.availabilitiesDoctorService.updateAvailability(availability);
 
     return appointment;
   }
 
   // Get all patient-appointments by your ID associated
-  async findAllPatientAppointments(id_patient: string): Promise<Appointment[]> {
+  async findAllPatientAppointments(
+    patient_id: string,
+    filterOptions: IFilterOptionsForPatients,
+  ): Promise<Appointment[]> {
+    // create filter options
+    const dateForFilter = this.createFilterOptionsOfDate(filterOptions);
+
+    const whereConditions: any = { patient_id };
+
+    if (dateForFilter) {
+      whereConditions.appointment_date = dateForFilter; // Solo si `dateFilter` es un valor válido
+    }
+
+    if (filterOptions.speciality) {
+      whereConditions.doctor = { speciality: filterOptions.speciality };
+    }
+
     const appointments = await this.appointmentRepository.find({
-      where: { patient_id: id_patient },
+      where: whereConditions,
+      order: { appointment_date: 'ASC' }, // sort by appointment_date ascending
       relations: ['doctor', 'patient'], // We match doctors and patients
     });
 
@@ -117,9 +115,23 @@ export class AppointmentService {
   }
 
   // Get all doctor-appointments by your ID associated
-  async findAllDoctorAppointments(id_doctor: string): Promise<Appointment[]> {
+  async findAllDoctorAppointments(
+    doctor_id: string,
+    filterOptions: IFilterOptionsForDoctors,
+  ): Promise<Appointment[]> {
+    // create filter options
+
+    const dateForFilter = this.createFilterOptionsOfDate(filterOptions);
+
+    const whereConditions: any = { doctor_id };
+
+    if (dateForFilter) {
+      whereConditions.appointment_date = dateForFilter; // Solo si `dateFilter` es un valor válido
+    }
+
     const appointments = await this.appointmentRepository.find({
-      where: { doctor_id: id_doctor },
+      where: whereConditions,
+      order: { appointment_date: 'ASC' }, // sort by appointment_date ascending
       relations: ['doctor', 'patient'], // We match doctors and patients
     });
 
@@ -133,10 +145,10 @@ export class AppointmentService {
   // Get a patient-specific appointment by your ID
   async findOnePatientAppointment(
     id: string,
-    id_patient: string,
+    patient_id: string,
   ): Promise<Appointment> {
     const appointment = await this.appointmentRepository.findOne({
-      where: { id, patient_id: id_patient },
+      where: { id, patient_id },
       relations: ['doctor', 'patient'],
     });
 
@@ -150,16 +162,16 @@ export class AppointmentService {
   // Get a doctor-specific appointment by your ID
   async findOneDoctorAppointment(
     id: string,
-    id_doctor: string,
+    doctor_id: string,
   ): Promise<Appointment> {
     // Buscamos la cita específica del doctor
     const appointment = await this.appointmentRepository.findOne({
-      where: { id, doctor_id: id_doctor },
+      where: { id, doctor_id },
       relations: ['doctor', 'patient'],
     });
 
     if (!appointment) {
-      throw new NotFoundException(`No appointment found for this patient`);
+      throw new NotFoundException(`No appointment found for this doctor`);
     }
 
     return appointment;
@@ -167,12 +179,12 @@ export class AppointmentService {
 
   async rescheduleAppointment(
     id: string,
-    id_patient: string,
+    patient_id: string,
     availability_id: string,
   ): Promise<Appointment> {
     // looking for a appointment to reschedule
     const appointment = await this.appointmentRepository.findOne({
-      where: { id, patient_id: id_patient },
+      where: { id, patient_id },
       relations: ['doctor', 'patient'],
     });
 
@@ -180,17 +192,21 @@ export class AppointmentService {
       throw new NotFoundException(`No appointment found for this patient`);
     }
 
+    // chech if the appointment is not expired
+    const currentDate = new Date();
+    if (appointment.appointment_date < currentDate)
+      throw new ConflictException(
+        'You cannot re schedule a appointment that is already expired',
+      );
+
     // Looking for a new availability
     const { doctor_id } = appointment;
 
-    const availability = await this.availabilityDoctorRepository.findOne({
-      where: {
-        id: availability_id,
-        is_availability: true,
+    const availability =
+      await this.availabilitiesDoctorService.searchAvailabilityDoctorByAvailabilityId(
+        availability_id,
         doctor_id,
-      },
-      relations: ['doctor'],
-    });
+      );
 
     if (!availability) {
       throw new ConflictException(
@@ -200,19 +216,19 @@ export class AppointmentService {
 
     // Release the previous availability
     const previousAvailability =
-      await this.availabilityDoctorRepository.findOne({
-        where: {
-          doctor_id: appointment.doctor.id,
-          year: appointment.appointment_date.getFullYear(),
-          month: appointment.appointment_date.getMonth() + 1,
-          day: appointment.appointment_date.getDate(),
-          schedule: appointment.appointment_date.getHours(),
-        },
+      await this.availabilitiesDoctorService.searchAvailabilityDoctorTaken({
+        doctor_id: appointment.doctor.id,
+        year: appointment.appointment_date.getFullYear(),
+        month: appointment.appointment_date.getMonth() + 1,
+        day: appointment.appointment_date.getDate(),
+        schedule: appointment.appointment_date.getHours(),
       });
 
     if (previousAvailability) {
       previousAvailability.is_availability = true;
-      await this.availabilityDoctorRepository.save(previousAvailability);
+      await this.availabilitiesDoctorService.updateAvailability(
+        previousAvailability,
+      );
     }
 
     /// create the new appointment date, based on the availability date
@@ -223,16 +239,16 @@ export class AppointmentService {
     appointment.appointment_date = newAppointmentDate;
     await this.appointmentRepository.save(appointment);
 
-    // update disponibility
+    // update the new availability taken by the appointment
     availability.is_availability = false;
-    await this.availabilityDoctorRepository.save(availability);
+    await this.availabilitiesDoctorService.updateAvailability(availability);
 
     return;
   }
 
-  async cancelAppointment(id: string, id_patient: string, update_by: Role) {
+  async cancelAppointment(id: string, patient_id: string) {
     const appointment = await this.appointmentRepository.findOne({
-      where: { id, patient_id: id_patient },
+      where: { id, patient_id },
       relations: ['doctor'],
     });
 
@@ -257,31 +273,132 @@ export class AppointmentService {
 
     // Change appointment status
     appointment.status = AppointmentStatus.CANCELED;
-    appointment.update_by = update_by;
+    appointment.update_by = Role.patient;
     await this.appointmentRepository.save(appointment);
 
-    // If the cancelled appointment date is later than the current one, release availability again
+    // If the cancelled appointment date is greater than the current one, release availability again
     const appointmentDate = appointment.appointment_date;
     if (appointmentDate > currentDate) {
-      const availability = await this.availabilityDoctorRepository.findOne({
-        where: {
+      const availability =
+        await this.availabilitiesDoctorService.searchAvailabilityDoctorTaken({
           doctor_id: appointment.doctor.id,
           year: appointmentDate.getFullYear(),
           month: appointmentDate.getMonth() + 1,
           day: appointmentDate.getDate(),
           schedule: appointmentDate.getHours(),
-        },
-      });
+        });
 
       if (availability) {
         availability.is_availability = true;
-        await this.availabilityDoctorRepository.save(availability);
+        await this.availabilitiesDoctorService.updateAvailability(availability);
       }
 
       return {
-        message: 'Appointment canceled successfully',
+        message: 'Appointment cancelled successfully',
         appointment: appointment,
       };
     }
+  }
+
+  async updateAppointmentStatus(
+    id: string,
+    doctor_id: string,
+    updateAppointmentDto: UpdateAppointmentDto,
+  ): Promise<{ message: string; appointment: Appointment }> {
+    const { status, notes } = updateAppointmentDto;
+
+    if (status === 'scheduled') {
+      throw new BadRequestException(
+        'As a doctor you cannot schedule appointments directly',
+      );
+    }
+    // looking for appointment
+    const appointment = await this.appointmentRepository.findOne({
+      where: { id },
+      relations: ['appointment_details'],
+    });
+
+    if (!appointment) {
+      throw new NotFoundException('Appointment not found');
+    }
+
+    // validate the doctor associated with the appointment
+    if (appointment.doctor_id !== doctor_id) {
+      throw new BadRequestException(
+        'You are not authorized to update this appointment',
+      );
+    }
+
+    // If the appointment will be cancelled and its date is greater than the current one, release availability againnt
+    const currentDate = new Date();
+    const appointmentDate = appointment.appointment_date;
+    if (status === 'canceled' && appointmentDate > currentDate) {
+      const availability =
+        await this.availabilitiesDoctorService.searchAvailabilityDoctorTaken({
+          doctor_id: appointment.doctor_id,
+          year: appointmentDate.getFullYear(),
+          month: appointmentDate.getMonth() + 1,
+          day: appointmentDate.getDate(),
+          schedule: appointmentDate.getHours(),
+        });
+
+      if (availability) {
+        availability.is_availability = true;
+        await this.availabilitiesDoctorService.updateAvailability(availability);
+      }
+    }
+
+    // update appointment status
+    appointment.status = status;
+    appointment.update_by = Role.doctor;
+
+    // update notes on the details of appointment
+    appointment.appointment_details.notes = notes;
+    await this.appointmentsDetailsService.update(appointment.id, {
+      notes: appointment.appointment_details.notes,
+      reason_consultation: appointment.appointment_details.reason_consultation,
+    });
+
+    // Save changes in the appointment
+    await this.appointmentRepository.save(appointment);
+
+    return {
+      message: 'Appointment updated successfully',
+      appointment: appointment,
+    };
+  }
+
+  createFilterOptionsOfDate(
+    availabilitiesFilterOptions:
+      | IFilterOptionsForPatients
+      | IFilterOptionsForDoctors,
+  ) {
+    const currentDate = new Date();
+
+    // create date object for filtering
+    // if some date not provided, then it will be the current
+
+    const { year, month, day } = availabilitiesFilterOptions;
+
+    let DateForFilter: Date | undefined = undefined;
+
+    if (year || month || day) {
+      DateForFilter = new Date(
+        year ? year : currentDate.getFullYear(),
+        month ? month : currentDate.getMonth() - 1,
+        day ? day : currentDate.getDate(),
+      );
+    }
+    return DateForFilter;
+  }
+
+  findOne(id: string) {
+    const appoinment = this.appointmentRepository.findOne({
+      where: { id },
+    });
+
+    if (!appoinment) throw new NotFoundException('No appointment found');
+
+    return appoinment;
   }
 }
